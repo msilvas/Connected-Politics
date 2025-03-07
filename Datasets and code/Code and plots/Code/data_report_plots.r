@@ -63,7 +63,7 @@ sampled_speeches <- df |>
 #### 
 # Assign random values to the validation column
 sampled_speeches <- sampled_speeches |>
-    mutate(validation = sample(c("Alp", "Mo", "Kun"), n(), replace = TRUE, prob = c(0.4, 0.4, 0.2)))
+    mutate(validation = sample(c("Alp", "Mo", "Kun"), n(), replace = TRUE, prob = c(0.4, 0.2, 0.4)))
 
 sampled_speeches
 
@@ -84,14 +84,15 @@ ppp_long <- ppp |>
     mutate(year = substr(year, 1, 4))
 
 # Ffill missing values
+library(zoo)
 
 ppp_long <- ppp_long |>
-    group_by(country_abb) |>
-    mutate(PPP = ifelse(PPP == "..", NA, as.numeric(PPP))) |>
-    mutate(PPP = zoo::na.locf(PPP, na.rm = FALSE, fromLast = TRUE)) |>
-    mutate(PPP = zoo::na.locf(PPP, na.rm = FALSE)) |>
-    ungroup() |>
-    mutate(PPP = round(PPP, 2))
+  group_by(country_abb) |>
+  mutate(PPP = ifelse(PPP == "..", NA, as.numeric(PPP))) |>
+  mutate(PPP = zoo::na.locf(PPP, na.rm = FALSE, fromLast = TRUE)) |>
+  mutate(PPP = zoo::na.locf(PPP, na.rm = FALSE)) |>
+  ungroup() |>
+  mutate(PPP = round(PPP, 2, na.rm = TRUE))
 
 # Create a column named country_abb with the first three characters of Id
     df <- df |>
@@ -126,6 +127,13 @@ sdg_index$aux_id <- paste(sdg_index$id, sdg_index$year, sep = "_")
 df <- df |>
     left_join(sdg_index |> select (-id, -country, -year), by = "aux_id")
 
+
+# Rows without SDG index score 
+na_rows <- df |>
+    filter(across(goal1:goal17, ~ is.na(.))) |>
+    select(id, goal1:goal17)
+
+na_rows
 
 # Replace all non numeric values in numeric columns with NA
 
@@ -404,16 +412,14 @@ ggsave("plot_top_10_speeches_sdg_0.png", plot = plot_top_10,
 
 
 df <- df |>
-    mutate(
-        reducing_ineq_eval = ((goal1 + goal2 + goal10)  / 3),
-        acc_safe_cond_eval = ((goal3 + goal6 + goal7) / 3),
-        sust_growth_eval = ((goal8 + goal9 + goal16) / 3),
-        education_eval = ((goal4 + goal5) / 3),
-        sust_partner_eval = ((goal11 + goal12 + goal17) / 3),
-        climate_action_eval = ((goal13 + goal14 + goal15) / 3)
-    )
-
-
+  mutate(
+    reducing_ineq_eval = rowMeans(across(c(goal1, goal2, goal10)), na.rm = TRUE),
+    acc_safe_cond_eval = rowMeans(across(c(goal3, goal6, goal7)), na.rm = TRUE),
+    sust_growth_eval = rowMeans(across(c(goal8, goal9, goal16)), na.rm = TRUE),
+    education_eval = rowMeans(across(c(goal4, goal5)), na.rm = TRUE),
+    sust_partner_eval = rowMeans(across(c(goal11, goal12, goal17)), na.rm = TRUE),
+    climate_action_eval = rowMeans(across(c(goal13, goal14, goal15)), na.rm = TRUE)
+  )
 
 # Pivot longer for plotting
 df_long_eval <- df |>
@@ -535,92 +541,35 @@ ggsave("plot5_boxplot_sdg_eval.png", plot = plot5,
        device = "png", dpi = 600, width = 20, height = 15)
 
 
-#### Case comparison plots MLT v. LUX
-
-# SDG mentions comparison
-# Filter the data for Luxembourg (LUX) and Malta (MLT)
-df_lux_mlt <- df |>
-    filter(country_abb %in% c("LUX", "MLT"))
-
-# Create the lineplot
-plot6 <- ggplot(df_lux_mlt, aes(x = year, y = sdg_index_score, color = country_abb, group = country_abb)) +
-    geom_line(size = 1.2) +
-    geom_point(size = 2) +
-    labs(
-        title = "SDG Index Score Over Time\n for Luxembourg and Malta\n",
-        x = "Year\n",
-        y = "SDG Index Score\n",
-        color = "Country"
-    ) + geom_vline(xintercept = 2015, linetype = "dashed", color = "black") +
-    annotate("text", x = 2018, y = (max(df_lux_mlt$sdg_index_score) - 5),
-                     label = "SDG implementation (2015)", vjust = -1,
-                      color = "black", fontface = "bold", size=2) +
-    scale_color_manual(values = c("LUX" = "#0072B2", "MLT" = "#D55E00")) +
-    theme_minimal() +
-    theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-        axis.title = element_text(face = "bold", size = 14),
-        axis.text = element_text(size = 12),
-        legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.box = "horizontal",
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14)
-    ) +
-    theme(plot.margin = margin(1, 1, 1, 1, "cm")) +
-    theme(aspect.ratio = 0.75)
-
-plot6
-
-
-# Save the plot with high resolution
-ggsave("plot6_sdg_index_lux_mlt.pdf", plot = plot6,
-    path = "/Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Code and plots/Plots/",
-    device = "pdf", dpi = 600, width = 12, height = 8)
-
-ggsave("plot6_sdg_index_lux_mlt.png", plot = plot6,
-    path = "/Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Code and plots/Plots/",
-    device = "png", dpi = 600, width = 12, height = 8)
-
-# Create the lineplot for PPP by year for Luxembourg and Malta
-plot7 <- ggplot(df_lux_mlt, aes(x = year, y = ppp, color = country_abb, group = country_abb)) +
-    geom_line(size = 1.2) +
-    geom_point(size = 2) +
-    labs(
-        title = "GDP per capita PPP Over Time\n for Luxembourg and Malta",
-        x = "Year\n",
-        y = "GDP per capita (PPP)\n",
-        color = "Country"
-    ) +
-    scale_color_manual(values = c("LUX" = "#0072B2", "MLT" = "#D55E00")) +
-    theme_minimal() +
-    scale_y_continuous(labels = scales::comma) +  # Change x axis scale to avoid scientific notation
-    theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-        axis.title = element_text(face = "bold", size = 16),
-        axis.text = element_text(size = 12),
-        legend.position = "bottom",
-        legend.direction = "horizontal",
-        legend.box = "horizontal",
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14)
-    ) +
-    theme(plot.margin = margin(1, 1, 1, 1, "cm")) +
-    theme(aspect.ratio = 0.75)
-
-# Combine plot6 and plot7 side by side
-combined_plot <- cowplot::plot_grid(plot6, plot7, labels = c("A", "B"), ncol = 2, align = "v")
-
-combined_plot
-
-# Save the combined plot with high resolution
-ggsave("combined_plot_lux_mlt.pdf", plot = combined_plot,
-    path = "/Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Code and plots/Plots/",
-    device = "pdf", dpi = 600, width = 24, height = 12)
-
-ggsave("combined_plot_lux_mlt.png", plot = combined_plot,
-    path = "/Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Code and plots/Plots/",
-    device = "png", dpi = 600, width = 24, height = 12)
-
 # Save final dataset
 write_csv(df, "//Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Datasets/Final merged dataset/df_merged.csv")
+
+
+# Case selection 
+
+# Group df by country_abb and calculate the average climate_action_eval
+avg_climate_action <- df |>
+    group_by(country_abb) |>
+    summarise(climate_action_eval = mean(climate_action_eval, na.rm = TRUE)) |>
+    ungroup()
+
+# Select the top 10 and bottom 10 values based on climate_action_eval
+top_10_climate_action <- avg_climate_action |>
+    arrange(desc(climate_action_eval)) |>
+    slice(1:10)
+
+bottom_10_climate_action <- avg_climate_action |>
+    arrange(climate_action_eval) |>
+    slice(1:10)
+
+# Combine the top and bottom 10 into one dataframe
+selected_countries <- bind_rows(top_10_climate_action, bottom_10_climate_action)
+
+selected_countries
+
+# Save the selected countries as a subset
+
+subset_df <- df |>
+    filter(country_abb %in% selected_countries$country_abb)
+
+write_csv(subset_df, "/Users/mass/Documents/Masters/Courses/Connected Politics/Github repository/Content/Datasets and code/Datasets/Final merged dataset/top_and_bottom10_climate_action_countries.csv")
